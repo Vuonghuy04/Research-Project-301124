@@ -12,6 +12,7 @@ fields = [
     "DividendYield",      # Dividend yield (DIV)
     "DebtEquityRatio",    # Debt-to-Equity Ratio (proxy for DAR)
     "MarketCap",          # Market capitalization (for SIZE)
+    "NetIncome"           # Net income
 ]
 
 # Function to fetch and process company data
@@ -34,6 +35,7 @@ def fetch_company_data(name):
                 "DIV": round(data.get("DividendYield", 0), 2) if data.get("DividendYield") is not None else "Missing",
                 "DAR (Proxy)": round(data.get("DebtEquityRatio", 0), 2) if data.get("DebtEquityRatio") is not None else "Missing",
                 "SIZE (Billion)": round(data.get("MarketCap", 0) / 1_000_000_000, 2) if data.get("MarketCap") is not None else "Missing",
+                "Net Income (Million)": round(data.get("NetIncome", 0), 2) if data.get("NetIncome") is not None else "Missing"
             }
         else:
             print(f"No data found for {name}")
@@ -54,7 +56,7 @@ if data:
     df = pd.DataFrame(data)
 
     # Save the results to an Excel file
-    output_file = "ASX_Company_Data.xlsx"
+    output_file = "ASX_Company_Data_With_NetIncome.xlsx"
     df.to_excel(output_file, index=False)
     print(f"Data saved to {output_file}")
 else:
