@@ -1,50 +1,54 @@
 import mstarpy
 import pandas as pd
-import datetime
 
-# List of ASX company names
-company_names = ["Telstra", "Woolworths", "Commonwealth Bank"]
+# Load the file containing company names
+file_path = 'companies-list.csv'  # Adjust this path if necessary
+company_data = pd.read_csv(file_path)
 
-# Data Point IDs for key financial variables
-data_point_ids = {
-    "ROA": "IFBS002270",  # Total Assets (proxy for ROA calculation)
-    "ROE": "IFBS002220",  # Total Equity (proxy for ROE calculation)
-    "NetIncome": "IFIS001100",  # Net Income
-    "DebtEquityRatio": "IFBS002646",  # Debt-to-Equity Ratio
-    "DividendYield": "SAL0000001",  # Dividend Yield
-    "MarketCap": "IFBS001170"  # Market Capitalization
-}
+# Clean the 'Company' column to remove the code in parentheses and "Limited" or "Ltd"
+company_data['CleanedCompany'] = (
+    company_data['Company']
+    .str.split('(').str[0]               # Remove everything after '('
+    .str.replace(r'\b(Limited|Ltd)\b', '', regex=True)  # Remove "Limited" or "Ltd"
+    .str.strip()                        # Remove extra whitespace
+)
 
-# Helper function to extract multi-year data
-def extract_multi_year_data(rows, data_point_id, years):
-    for row in rows:
-        if row["dataPointId"] == data_point_id:
-            return {year: row["datum"][i] if i < len(row["datum"]) else None for i, year in enumerate(years)}
-    return {year: None for year in years}
+# Extract the cleaned company names
+company_names = company_data['CleanedCompany'].tolist()
 
-# Function to fetch data for a single company
+# Fields to retrieve directly
+fields = [
+    "Name",               # Stock name
+    "ROATTM",             # Return on Assets (ROA, trailing twelve months)
+    "ROETTM",             # Return on Equity (ROE, trailing twelve months)
+    "DividendYield",      # Dividend yield (DIV)
+    "DebtEquityRatio",    # Debt-to-Equity Ratio (proxy for DAR)
+    "MarketCap",          # Market capitalization (for SIZE)
+    "NetIncome"           # Net income
+]
+
+# Function to fetch and process company data
 def fetch_company_data(name):
     try:
+        # Fetch data from Morningstar
         response = mstarpy.search_stock(
             term=name,
-            field=list(data_point_ids.values()),
-            exchange="XASX",
-            pageSize=1
+            field=fields,
+            exchange="XASX",  # ASX Exchange code
+            pageSize=1        # Return only the top result
         )
         if response:
-            financial_data = response[0]
-            rows = financial_data.get("rows", [])
-            column_defs = financial_data.get("columnDefs", [])
-            
-            # Extract years from column definitions
-            years = [datetime.datetime.strptime(col, "%Y%m%d").year for col in column_defs]
-            
-            # Extract data for each year
-            result = {"Name": name}
-            for var_name, data_point_id in data_point_ids.items():
-                result[var_name] = extract_multi_year_data(rows, data_point_id, years)
-            
-            return result
+            # Extract data and format it
+            data = response[0]
+            return {
+                "Name": data.get("Name", "Unknown"),
+                "ROA": round(data.get("ROATTM", 0), 2) if data.get("ROATTM") is not None else "Missing",
+                "ROE": round(data.get("ROETTM", 0), 2) if data.get("ROETTM") is not None else "Missing",
+                "DIV": round(data.get("DividendYield", 0), 2) if data.get("DividendYield") is not None else "Missing",
+                "DAR (Proxy)": round(data.get("DebtEquityRatio", 0), 2) if data.get("DebtEquityRatio") is not None else "Missing",
+                "SIZE (Billion)": round(data.get("MarketCap", 0) / 1_000_000_000, 2) if data.get("MarketCap") is not None else "Missing",
+                "Net Income (Million)": round(data.get("NetIncome", 0), 2) if data.get("NetIncome") is not None else "Missing"
+            }
         else:
             print(f"No data found for {name}")
             return None
@@ -59,31 +63,13 @@ for name in company_names:
     if company_data:
         data.append(company_data)
 
-# Convert collected data to multiple DataFrames (one per year)
+# Convert collected data to a DataFrame
 if data:
-    # Extract all years
-    all_years = set()
-    for company in data:
-        for year in company["ROA"].keys():
-            all_years.add(year)
-    all_years = sorted(all_years)
+    df = pd.DataFrame(data)
 
-    # Create a DataFrame for each year
-    for year in all_years:
-        rows = []
-        for company in data:
-            row = {"Name": company["Name"], "Year": year}
-            for var, yearly_data in company.items():
-                if var != "Name":
-                    row[var] = yearly_data[year]
-            rows.append(row)
-
-        # Convert rows to a DataFrame
-        df = pd.DataFrame(rows)
-
-        # Save each year's data to a separate Excel sheet
-        output_file = f"ASX_Company_Data_{year}.xlsx"
-        df.to_excel(output_file, index=False)
-        print(f"Data for {year} saved to {output_file}")
+    # Save the results to an Excel file
+    output_file = "Company_Data.xlsx"
+    df.to_excel(output_file, index=False)
+    print(f"Data saved to {output_file}")
 else:
     print("No data was collected.")
